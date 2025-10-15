@@ -1,0 +1,21 @@
+# Build
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+cmake_install.cmake
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Results/Profiles
+/results/
+/profiles/
+
+# Misc
+.DS_Store
