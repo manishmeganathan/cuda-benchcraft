@@ -1,14 +1,17 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.20)
 project(cuda_gemm LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set_property(TARGET PROPERTY CUDA_ARCHITECTURES native)
-endif()
-
 find_package(CUDAToolkit REQUIRED)
+
+find_program(NCU_EXE ncu)
+if(NCU_EXE)
+  message(STATUS "Nsight Compute found: ${NCU_EXE}")
+else()
+  message(STATUS "Nsight Compute (ncu) NOT found; profiling disabled until installed.")
+endif()
 
 add_executable(gemm_bench
   src/main.cu
@@ -20,7 +23,6 @@ add_executable(gemm_bench
 
 target_include_directories(gemm_bench PRIVATE include)
 
-# Handy CUDA flags: fast math, line info, and show ptxas register usage.
 target_compile_options(gemm_bench PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:
     --use_fast_math
