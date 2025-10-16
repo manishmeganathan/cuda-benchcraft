@@ -1,9 +1,11 @@
-// include/util.hpp
+// include/utilities.hpp
 // Utilities: CUDA error check + templated event timer + CLI utility declarations
 
 #pragma once
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <vector>
 #include <cuda_runtime.h>
 
 // CUDA Error Checking
@@ -49,4 +51,19 @@ void fill_vector(std::vector<float>& vec, unsigned seed);
 
 // CLI utilities
 bool flag_present(int argc, char** argv, const char* flag);
-const char* opt_value(int argc, char** argv, const char* key, const char* def);
+const char* flag_opt(int argc, char** argv, const char* key, const char* def);
+
+// File Handling utilities
+bool ensure_parent_dirs(const std::string& path);
+bool append_text_line(const std::string& path, const std::string& line);
+
+// Benchmark Record utilties
+std::string make_csv_record(const char* name,
+                            int M, int N, int K, int iters,
+                            double ms_avg, double gflops,
+                            double max_abs_err, double rel_err);
+
+std::string make_json_record(const char* name,
+                             int M, int N, int K, int iters,
+                             double ms_avg, double gflops,
+                             double max_abs_err, double rel_err);

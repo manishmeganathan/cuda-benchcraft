@@ -2,32 +2,51 @@
 #include <cstdlib>
 #include <vector>
 #include <string>
+#include <cmath>
 
 #include "kernels.hpp"
 #include "utilities.hpp"
 
 #include <cuda_runtime.h>
 
-// Prints basic CLI help
 static void print_help() {
-  std::printf("gemm_bench options:\n");
+  std::printf("gemm_bench (engine)\n");
   std::printf("  --M <int> --N <int> --K <int>\n");
   std::printf("  --iters <int>\n");
-  std::printf("  --kind <name|all>\n");
-  std::printf("  --list\n");
-  std::printf("  --check\n");
+  std::printf("  --kind <KernelName>\n");
+  std::printf("  --seedA <uint> --seedB <uint>\n");
+  std::printf("  --format <csv|json>\n");
+  std::printf("  --output <path>    (required; appends one record)\n");
+  std::printf("  --list | --help\n");
 }
 
 int main(int argc, char** argv) {
   if (flag_present(argc, argv, "--help")) { print_help(); return 0; }
   if (flag_present(argc, argv, "--list")) { list_kernels(); return 0; }
 
-  // Parse matrix sizes, benchmark iteration and kernel kind (defaults are conservative).
-  int M = std::atoi(opt_value(argc, argv, "--M", "1024"));
-  int N = std::atoi(opt_value(argc, argv, "--N", "1024"));
-  int K = std::atoi(opt_value(argc, argv, "--K", "1024"));
-  int iters = std::atoi(opt_value(argc, argv, "--iters", "10"));
-  std::string kind_s = opt_value(argc, argv, "--kind", "all");
+  // Parse matrix sizes and benchmark iterations
+  int M = std::atoi(flag_opt(argc, argv, "--M", "1024"));
+  int N = std::atoi(flag_opt(argc, argv, "--N", "1024"));
+  int K = std::atoi(flag_opt(argc, argv, "--K", "1024"));
+  int iters = std::atoi(flag_opt(argc, argv, "--iters", "10"));
+  // Parse matrix fill seeds
+  unsigned seedA = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedA", "1234"), nullptr, 10);
+  unsigned seedB = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedB", "5678"), nullptr, 10);
+  // Parse kernel kind, result formatting and output path
+  std::string kind = flag_opt(argc, argv, "--kind", "");
+  std::string out = flag_opt(argc, argv, "--output", "");
+  std::string fmt = flag_opt(argc, argv, "--format", "csv");
+
+  // --kind and --output are required flags
+  if (kind.empty() || out.empty()) {
+    std::fprintf(stderr, "error: --kind and --output are required. use --help.\n");
+    return 2;
+  }
+  // Constrain --format to csv or json
+  if (fmt != "csv" && fmt != "json") {
+    std::fprintf(stderr, "error: --format must be 'csv' or 'json'.\n");
+    return 2;
+  }
 
   // Host buffers
   std::vector<float> hA((size_t)M * K);
@@ -36,8 +55,8 @@ int main(int argc, char** argv) {
   std::vector<float> hC_ref((size_t)M * N, 0.f);    // pre-fill C with 0 values
   
   // Fill A & B deterministically
-  fill_vector(hA, 1234); 
-  fill_vector(hB, 5678);
+  fill_vector(hA, seedA); 
+  fill_vector(hB, seedB);
 
   // Device buffers + stream; async copies.
   float *dA=nullptr, *dB=nullptr, *dC=nullptr, *dC_ref=nullptr;
@@ -59,65 +78,63 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaMemset(dC, 0, sC));
   CUDA_CHECK(cudaMemset(dC_ref, 0, sC));
 
-  // cuBLAS reference once: C_ref = A * B (row-major via dispatcher’s CuBLAS path).
+  // cuBLAS reference: C_ref = A * B (row-major via dispatcher’s CuBLAS path).
   launch_kernel(KernelKind::CuBLAS, dA, dB, dC_ref, M, N, K, stream);
   CUDA_CHECK(cudaStreamSynchronize(stream));
   CUDA_CHECK(cudaMemcpy(hC_ref.data(), dC_ref, sC, cudaMemcpyDeviceToHost));
 
-  // CSV header once; one row per kernel kind.
-  printf("name,M,N,K,iters,ms_avg,gflops,max_abs_err,rel_err\n");
+  // Resolve kernel kind
+  KernelKind k = parse_kind(kind.c_str());
+  
+  CUDA_CHECK(cudaMemset(dC, 0, sC));
+  // Run the kernel 'iters' times and time with CUDA events
+  float ms = time_ms_repeat(iters, stream, [&]{
+    launch_kernel(k, dA, dB, dC, M, N, K, stream);
+  });
+  
+  // Copy kernel output C back to host for comparison with cuBLAS reference.
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+  CUDA_CHECK(cudaMemcpy(hC.data(), dC, sC, cudaMemcpyDeviceToHost));
 
-  // Runs one kernel kind: measure avg ms, compute GFLOP/s, print CSV row.
-  auto run_one = [&](KernelKind k) {
-    CUDA_CHECK(cudaMemset(dC, 0, sC));  
-
-    // Time N iterations with CUDA events (GPU-only time, excludes memory operations).
-    float ms = time_ms_repeat(iters, stream, [&]{
-      launch_kernel(k, dA, dB, dC, M, N, K, stream);
-    });
-
-    // GEMM FLOP count: 2 * M * N * K (mul + add per inner product).
-    double gflops = (2.0 * (double)M * (double)N * (double)K) / (ms / 1e3) / 1e9;
-
-    // Copy kernel output C back to host for comparison with cuBLAS reference.
-    CUDA_CHECK(cudaMemcpy(hC.data(), dC, sC, cudaMemcpyDeviceToHost));
-   
-    // Determine max absolute error and max reference magnitude
-    double max_abs = 0.0, max_ref = 0.0;
-    for (size_t i = 0; i < hC.size(); ++i) {
-      double diff = std::abs((double)hC[i] - (double)hC_ref[i]);
-      if (diff > max_abs) max_abs = diff;                    
-      
-      double elem = std::abs((double)hC_ref[i]);              
-      if (elem > max_ref) max_ref = elem;         
-    }
-
-    // Compute relative error from max absolute error and max reference magnitude
-    // The 1e-7 correction is to avoid the numerical instability of divide-by-zero
-    double rel_err = max_abs / (max_ref + 1e-7);           
-
-    // One CSV row; scripts/bench.py will aggregate and plot this.
-    std::printf("%s,%d,%d,%d,%d,%.5f,%.3f,%.3e,%.3e\n", kernel_name(k), M, N, K, iters, ms, gflops, max_abs, rel_err);
-
-    // Ensure the kernel fully completes before launching the next variant.
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-  };
-
-  if (kind_s == "all") {
-    run_one(KernelKind::Naive1D);
-    run_one(KernelKind::Naive2D);
-    // ...
-    run_one(KernelKind::CuBLAS);
-  } else {
-    run_one(parse_kind(kind_s.c_str()));
+  // Determine max absolute error and max reference magnitude
+  double max_abs = 0.0, max_ref = 0.0;
+  for (size_t i = 0; i < hC.size(); ++i) {
+    double diff = std::abs((double)hC[i] - (double)hC_ref[i]);
+    if (diff > max_abs) max_abs = diff;                    
+    
+    double elem = std::abs((double)hC_ref[i]);              
+    if (elem > max_ref) max_ref = elem;         
   }
 
-  // Release device memory
-  CUDA_CHECK(cudaFree(dA)); 
-  CUDA_CHECK(cudaFree(dB)); 
-  CUDA_CHECK(cudaFree(dC));
-  CUDA_CHECK(cudaFree(dC_ref));
-  CUDA_CHECK(cudaStreamDestroy(stream));
+  // Compute relative error from max absolute error and max reference magnitude
+  // The 1e-7 correction is to avoid the numerical instability of divide-by-zero
+  double rel_err = max_abs / (max_ref + 1e-7);  
+  // GEMM FLOP count: 2 * M * N * K (mul + add per inner product).
+  double gflops = (2.0 * (double)M * (double)N * (double)K) / (ms / 1e3) / 1e9;
 
+  // Serialize one record and append to --output
+  const char* kname = kernel_name(k);
+  std::string record = (fmt == "json")
+    ? make_json_record(kname, M, N, K, iters, ms, gflops, max_abs, rel_err)
+    : make_csv_record (kname, M, N, K, iters, ms, gflops, max_abs, rel_err);
+
+  // Closure to free GPU resources
+  auto release_device = [&](){
+    if (dA) cudaFree(dA), dA = nullptr;
+    if (dB) cudaFree(dB), dB = nullptr;
+    if (dC) cudaFree(dC), dC = nullptr;
+    if (dC_ref) cudaFree(dC_ref), dC_ref = nullptr;
+    if (stream) cudaStreamDestroy(stream), stream = nullptr;
+  };
+
+  // Append the benchmark record to the output file
+  if (!append_text_line(out, record)) {
+    std::fprintf(stderr, "error: failed to append to output file: %s\n", out.c_str());
+    
+    release_device();
+    return 3;
+  }
+
+  release_device();
   return 0;
 }
