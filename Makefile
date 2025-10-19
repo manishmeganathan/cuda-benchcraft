@@ -1,30 +1,45 @@
 BUILD_DIR ?= build
 CONFIG    ?= Release
-ARCHS     ?= 120;90
+ARCHS     ?= 89;90
 TARGET    ?= gemm_bench
-CMAKE     ?= cmake
+VENV      ?= .venv
+PIP       := $(VENV)/bin/pip
+PYTHON    := $(VENV)/bin/python
+
+.PHONY: build rebuild clean clean-build clean-results clean-venv venv deps craft
 
 # CMake configure (runs if build has been cleaned)
 $(BUILD_DIR)/CMakeCache.txt:
-	$(CMAKE) -B $(BUILD_DIR) -S . \
+	cmake -B $(BUILD_DIR) -S . \
 	  -DCMAKE_BUILD_TYPE=$(CONFIG) \
 	  -DCMAKE_CUDA_ARCHITECTURES="$(ARCHS)"
 
-.PHONY: build
-build: $(BUILD_DIR)/CMakeCache.txt
-	$(CMAKE) --build $(BUILD_DIR) -j
+build: $(BUILD_DIR)/CMakeCache.txt deps
+	cmake --build $(BUILD_DIR) -j
 
-.PHONY: clean-build
 clean-build:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: clean-results
 clean-results:
 	rm -rf results
 
-.PHONY: clean
-clean: clean-build clean-results
+clean-venv:
+	rm -rf "$(VENV)"
 
-# Rebuild from scratch
-.PHONY: rebuild
+clean: clean-build clean-results clean-venv
+
 rebuild: clean-build build
+
+venv:
+	@test -d "$(VENV)" || python3 -m venv "$(VENV)"
+
+deps: venv
+	if [ -f requirements.txt ]; then \
+	  "$(PIP)" install --upgrade pip && \
+	  "$(PIP)" install -r requirements.txt ; \
+	else \
+	  echo "requirements.txt not found; skipping Python deps."; \
+	fi
+
+craft: venv
+	@"$(PYTHON)" benchcraft.py
