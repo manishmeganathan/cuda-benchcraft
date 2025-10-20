@@ -1,4 +1,4 @@
-// src/kernels_cublas.cu
+// gemm/kernels_cublas.cu
 // cuBLAS SGEMM reference (row-major via swapped args): C = A*B
 
 #include "kernels.hpp"

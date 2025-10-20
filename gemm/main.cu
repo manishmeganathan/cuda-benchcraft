@@ -1,13 +1,9 @@
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <string>
-#include <cmath>
-
+#include "cudatools.hpp"
+#include "filesystem.hpp"
+#include "flagparse.hpp"
+#include "vectors.hpp"
 #include "kernels.hpp"
-#include "utilities.hpp"
-
-#include <cuda_runtime.h>
+#include "records.hpp"
 
 static void print_help() {
   std::printf("gemm_bench (engine)\n");
@@ -55,8 +51,8 @@ int main(int argc, char** argv) {
   std::vector<float> hC_ref((size_t)M * N, 0.f);    // pre-fill C with 0 values
   
   // Fill A & B deterministically
-  fill_vector(hA, seedA); 
-  fill_vector(hB, seedB);
+  fill_vector_uniform(hA, seedA); 
+  fill_vector_uniform(hB, seedB);
 
   // Device buffers + stream; async copies.
   float *dA=nullptr, *dB=nullptr, *dC=nullptr, *dC_ref=nullptr;
@@ -84,11 +80,11 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaMemcpy(hC_ref.data(), dC_ref, sC, cudaMemcpyDeviceToHost));
 
   // Resolve kernel kind
-  KernelKind k = parse_kind(kind.c_str());
+  KernelKind k = parse_kernel(kind.c_str());
   
   CUDA_CHECK(cudaMemset(dC, 0, sC));
   // Run the kernel 'iters' times and time with CUDA events
-  float ms = time_ms_repeat(iters, stream, [&]{
+  float ms = time_cuda_events(iters, stream, [&]{
     launch_kernel(k, dA, dB, dC, M, N, K, stream);
   });
   
@@ -96,27 +92,18 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaStreamSynchronize(stream));
   CUDA_CHECK(cudaMemcpy(hC.data(), dC, sC, cudaMemcpyDeviceToHost));
 
-  // Determine max absolute error and max reference magnitude
-  double max_abs = 0.0, max_ref = 0.0;
-  for (size_t i = 0; i < hC.size(); ++i) {
-    double diff = std::abs((double)hC[i] - (double)hC_ref[i]);
-    if (diff > max_abs) max_abs = diff;                    
-    
-    double elem = std::abs((double)hC_ref[i]);              
-    if (elem > max_ref) max_ref = elem;         
-  }
+  // Compare the kernel output with the reference value
+  double max_abs_err = 0.0, rel_err = 0.0;
+  cmp_vectors(hC, hC_ref, max_abs_err, rel_err);
 
-  // Compute relative error from max absolute error and max reference magnitude
-  // The 1e-7 correction is to avoid the numerical instability of divide-by-zero
-  double rel_err = max_abs / (max_ref + 1e-7);  
   // GEMM FLOP count: 2 * M * N * K (mul + add per inner product).
   double gflops = (2.0 * (double)M * (double)N * (double)K) / (ms / 1e3) / 1e9;
 
   // Serialize one record and append to --output
   const char* kname = kernel_name(k);
   std::string record = (fmt == "json")
-    ? make_json_record(kname, M, N, K, iters, ms, gflops, max_abs, rel_err)
-    : make_csv_record (kname, M, N, K, iters, ms, gflops, max_abs, rel_err);
+    ? make_json_record(kname, M, N, K, iters, ms, gflops, max_abs_err, rel_err)
+    : make_csv_record (kname, M, N, K, iters, ms, gflops, max_abs_err, rel_err);
 
   // Closure to free GPU resources
   auto release_device = [&](){
@@ -128,7 +115,7 @@ int main(int argc, char** argv) {
   };
 
   // Append the benchmark record to the output file
-  if (!append_text_line(out, record)) {
+  if (!append_file_line(out, record)) {
     std::fprintf(stderr, "error: failed to append to output file: %s\n", out.c_str());
     
     release_device();

@@ -1,4 +1,4 @@
-// src/kernels_naive.cu
+// gemm/kernels_naive.cu
 // Naive matmul kernels (row-major): C = A(M x K) * B(K x N)
 
 #include "kernels.hpp"

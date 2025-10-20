@@ -6,24 +6,23 @@ set(CMAKE_CUDA_STANDARD 17)
 
 find_package(CUDAToolkit REQUIRED)
 
-find_program(NCU_EXE ncu)
-if(NCU_EXE)
-  message(STATUS "Nsight Compute found: ${NCU_EXE}")
+find_program(NSYS nsys)
+if(NSYS)
+  message(STATUS "Nsight Systems (nsys) found: ${NSYS}")
 else()
-  message(STATUS "Nsight Compute (ncu) NOT found; profiling disabled until installed.")
+  message(STATUS "Nsight Systems (nsys) NOT found; profiling will not be available on benchcraft")
 endif()
 
-add_executable(gemm_bench
-  src/main.cu
-  src/utils.cu
-  src/kernels.cu
-  src/kernels_naive.cu
-  src/kernels_cublas.cu
+add_executable(bench_gemm
+  gemm/main.cu
+  gemm/kernels_naive.cu
+  gemm/kernels_cublas.cu
 )
 
-target_include_directories(gemm_bench PRIVATE include)
+target_include_directories(bench_gemm PUBLIC common)
+target_include_directories(bench_gemm PRIVATE gemm/include)
 
-target_compile_options(gemm_bench PRIVATE
+target_compile_options(bench_gemm PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:
     --use_fast_math
     -lineinfo
@@ -31,4 +30,4 @@ target_compile_options(gemm_bench PRIVATE
   >
 )
 
-target_link_libraries(gemm_bench PRIVATE CUDA::cudart CUDA::cublas)
+target_link_libraries(bench_gemm PRIVATE CUDA::cudart CUDA::cublas)
