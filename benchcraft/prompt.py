@@ -48,21 +48,21 @@ def prompt_kernels(available: List[str]) -> List[str]:
 
     selected: List[str] = []
     while True:
-        index = input(f"\n{menu}\nEnter kernel index (blank to finish): ").strip()
+        index = input(f"\n{menu}\nEnter Kernel Index (blank to finish): ").strip()
         if not index: 
             if selected: break
             else:
-                print("(!!) You must select at least one kernel.")
+                print("  no kernels selected")
                 continue
         
         try:
             kernel = available[int(index)]
         except (ValueError, IndexError):
-            print("(!!) Selection must be a valid index")
+            print("  selection must be a valid index")
             continue
 
         if kernel in selected:
-            print("(!!) Already added!")
+            print("  kernel already selected")
             continue
 
         selected.append(kernel)     

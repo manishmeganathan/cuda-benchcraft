@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 from . import system
+from . import prompt
 
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Tuple, Any
 
 BIN_PATH = Path("build/bench_gemm") 
 
@@ -26,6 +27,32 @@ def list_kernels() -> List[str]:
         raise RuntimeError(f"failed to list kernels (code={code}):\n{err.strip()}")
     
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+def prompt_parameters() -> Tuple[Dict[str, Any], List[str]]:
+    """ Prompt user for GEMM benchmarking parameters and kernel choices """
+    try:
+        kernel_list = list_kernels()
+    except Exception as e:
+        raise e
+
+    if not kernel_list:
+        raise RuntimeError("no kernels reported by bench_gemm")
+
+    # Prompt gemm matrix parameters
+    print("\n-- GEMM Benchmark Configuration --")
+    params = {}
+    params["M"] = prompt.prompt_int("M", 1024)
+    params["N"] = prompt.prompt_int("N", 1024)
+    params["K"] = prompt.prompt_int("K", 1024)
+    print() # newline
+    params["seedA"] = prompt.prompt_uint("Seed A", 1234)
+    params["seedB"] = prompt.prompt_uint("Seed B", 5678)
+
+    # Prompt kernel selection
+    kernels = prompt.prompt_kernels(kernel_list)
+    print("------------------------------------\n")
+
+    return params, kernels
 
 def run_kernel(
     kernel: str, iters: int,
