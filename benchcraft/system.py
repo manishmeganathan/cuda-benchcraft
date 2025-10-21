@@ -21,7 +21,7 @@ def run_cmd(args: List[str], check: bool = False, capture: bool = True, text: bo
         return 127, "", f"{e}"
 
 def discovery_cuda() -> Dict[str, Any]:
-    """Discovers and returns CUDA build information"""
+    """ Discovers and returns CUDA build information """
     cuda: Dict[str, Any] = {"archs": ""}
 
     # cuda.archs
@@ -55,7 +55,7 @@ def discovery_cuda() -> Dict[str, Any]:
     return cuda
 
 def discovery_system() -> Dict[str, Any]:
-    """Discovers and returns system information"""
+    """ Discovers and returns system information """
     system: Dict[str, Any] = {"cpu": "", "gpus": []}
 
     # system.os
@@ -86,7 +86,7 @@ def discovery_system() -> Dict[str, Any]:
     return system
 
 def discovery_build(bin: Path) -> Dict[str, Any]:
-    """Discover and returns build information"""
+    """ Discover and returns build information """
     build: Dict[str, Any] = {}
      
     # build.hash

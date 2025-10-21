@@ -15,7 +15,7 @@ import json
 import shutil
 
 from benchcraft import gemm
-from benchcraft import prompt, system
+from benchcraft import prompt, system, analysis
 
 from pathlib import Path
 from datetime import datetime, timezone
@@ -104,7 +104,10 @@ def main() -> int:
 
     # Add session ID and base artifacts to config
     config["benchmark"]["session_id"] = session_id
-    config["artifacts"] = {"profile": [], "benchmarks": "benchmarks.jsonl"}
+    config["artifacts"] = {
+        "profile": [], "plots": [], 
+        "benchmarks": "benchmarks.jsonl",
+    }
 
     start_time = datetime.now()
     try:
@@ -112,20 +115,22 @@ def main() -> int:
             print(f">> Benchmarking {kernel} ...")
 
             if profiling:
-                print("debug: abc")
-                record, profile_artifacts = gemm.run_kernel_with_profiling(kernel, iters, **matrix_params, output_dir=session_dir)
-                config["artifacts"]["profile"].append(profile_artifacts)
+                artifacts = gemm.run_kernel_profile(kernel, iters, **matrix_params, output_dir=session_dir)
+                config["artifacts"]["profile"].append(artifacts)
 
             else:
-                print("debug: abc-123")
-                record = gemm.run_kernel(kernel, iters, **matrix_params, output_dir=session_dir)
+                gemm.run_kernel(kernel, iters, **matrix_params, output_dir=session_dir)
 
-            print("done")
-            # TODO: process record(s) and artifacts and generate headlines
+        # TODO: process records and artifacts and generate headlines
 
         if plotting:
             print(f">> Generating Plots ...")
-            config["artifacts"]["plots"] = gemm.plot_graphs(session_dir)
+
+            # Generate GFLOP/s Throughput plot
+            if analysis.plot_throughput(session_dir):
+                config["artifacts"]["plots"].append("throughput.png")
+            else:
+                print("(!!) throughput plot generation failed")
 
     except KeyboardInterrupt:
         print("\n^C received. cleaning up session directory.")
@@ -135,7 +140,7 @@ def main() -> int:
 
     except Exception as e:
         print(f"\nerror: {e}")
-        print("aborting and cleaning up session directory.")
+        print("(!!) aborting and cleaning up session directory.")
 
         if session_dir.exists(): shutil.rmtree(session_dir, ignore_errors=True)
         return 1
@@ -157,9 +162,9 @@ def main() -> int:
     except Exception as e:
         print(f"(!!) warning: failed to write benchcraft.json: {e}")
 
-    print(f">> Closing benchcraft session. Results saved to: {session_dir}")
-
+    print(f">> Results saved to: {session_dir}")
     print(f"\n== Benchcraft Session Complete ==")
+
     return 0
 
 if __name__ == "__main__":

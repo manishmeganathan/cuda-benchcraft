@@ -3,6 +3,7 @@
 from typing import List
 
 def prompt_int(prompt: str, default: int) -> int:
+    """ Prompt user for an integer """
     while True:
         value = input(f"{prompt} (default: {default}): ").strip()
         if not value: return default
@@ -12,6 +13,7 @@ def prompt_int(prompt: str, default: int) -> int:
             print("  please enter a valid integer.")
 
 def prompt_uint(prompt: str, default: int) -> int:
+    """ Prompt user for a positive integer """
     while True:
         value = prompt_int(prompt, default)
         if value < 0:
@@ -20,6 +22,7 @@ def prompt_uint(prompt: str, default: int) -> int:
         return value
 
 def prompt_yes_no(prompt: str, default: bool = False) -> bool:
+    """ Prompt user for a yes/no question """
     opt = "Y/n" if default else "y/N"
 
     while True:
@@ -34,6 +37,11 @@ def prompt_yes_no(prompt: str, default: bool = False) -> bool:
         print("  please enter a valid response (y/n).")
 
 def prompt_kernels(available: List[str]) -> List[str]:
+    """ 
+    Prompt loop to collect a list of kernels to benchmark.
+    Expects user to input the index for the kernel. 
+    Selection must contain aleast one option
+    """
     menu = "Available Kernels: \n"
     for index, kernel in enumerate(available):
         menu += f"[{index}] {kernel}  "
