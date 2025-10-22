@@ -8,16 +8,6 @@
 enum class KernelKind : int {
   Naive1D,
   Naive2D,
-//   Coalesced,
-//   Unrolled,
-//   TiledShared,
-//   TiledSharedPadded,
-//   RegTile,
-//   WarpTile,
-//   DoubleBuffer,
-//   CpAsync,
-//   SplitK,
-//   WMMA,
   CuBLAS,
   Count
 };
@@ -34,10 +24,12 @@ inline static const char* kernel_name(KernelKind k) {
 
 // Maps string to KernelKind; defaults to Naive1D if no match.
 inline static KernelKind parse_kernel(const char* s) {
-  for (int i = 0; i < (int)KernelKind::Count; ++i) {
-    KernelKind k = static_cast<KernelKind>(i);
-    if (std::string(s) == kernel_name(k)) return k;
-  }
+  std::string name = std::string(s);
+
+  if (name == "Naive1D") return KernelKind::Naive1D;
+  if (name == "Naive2D") return KernelKind::Naive2D;
+  if (name == "CuBLAS") return KernelKind::CuBLAS;
+
   return KernelKind::Naive1D;
 }
 
@@ -52,9 +44,6 @@ void launch_naive1d(const float*, const float*, float*, int, int, int, cudaStrea
 void launch_naive2d(const float*, const float*, float*, int, int, int, cudaStream_t);
 void launch_cublas(const float*, const float*, float*, int, int, int, cudaStream_t);
 
-inline static void not_impl(KernelKind k) {
-  std::fprintf(stderr, "Kernel '%s' not implemented yet.\n", kernel_name(k));
-}
 
 // Unified GEMM Kernel Launcher
 inline static void launch_kernel(
@@ -69,6 +58,9 @@ inline static void launch_kernel(
     case KernelKind::Naive1D: launch_naive1d(A,B,C,M,N,K,stream); break;
     case KernelKind::Naive2D: launch_naive2d(A,B,C,M,N,K,stream); break;
     case KernelKind::CuBLAS: return launch_cublas(A,B,C,M,N,K,stream);
-    default: return not_impl(kind);
+    
+    default: 
+      std::fprintf(stderr, "Kernel '%s' not implemented yet.\n", kernel_name(kind));
+      return;
   }
 }

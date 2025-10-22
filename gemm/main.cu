@@ -2,8 +2,9 @@
 #include "filesystem.hpp"
 #include "flagparse.hpp"
 #include "vectors.hpp"
-#include "kernels.hpp"
-#include "records.hpp"
+
+#include "gemm/include/kernels.hpp"
+#include "gemm/include/records.hpp"
 
 static void print_help() {
   std::printf("bench_gemm\n");
@@ -21,17 +22,17 @@ int main(int argc, char** argv) {
   if (flag_present(argc, argv, "--list")) { list_kernels(); return 0; }
 
   // Parse matrix sizes and benchmark iterations
-  int M = std::atoi(flag_opt(argc, argv, "--M", "1024"));
-  int N = std::atoi(flag_opt(argc, argv, "--N", "1024"));
-  int K = std::atoi(flag_opt(argc, argv, "--K", "1024"));
-  int iters = std::atoi(flag_opt(argc, argv, "--iters", "10"));
+  const int M = std::atoi(flag_opt(argc, argv, "--M", "1024"));
+  const int N = std::atoi(flag_opt(argc, argv, "--N", "1024"));
+  const int K = std::atoi(flag_opt(argc, argv, "--K", "1024"));
+  const int iters = std::atoi(flag_opt(argc, argv, "--iters", "10"));
   // Parse matrix fill seeds
-  unsigned seedA = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedA", "1234"), nullptr, 10);
-  unsigned seedB = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedB", "5678"), nullptr, 10);
+  const unsigned seedA = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedA", "1234"), nullptr, 10);
+  const unsigned seedB = (unsigned)std::strtoul(flag_opt(argc, argv, "--seedB", "5678"), nullptr, 10);
   // Parse kernel kind, result formatting and output path
-  std::string kind = flag_opt(argc, argv, "--kind", "");
-  std::string out = flag_opt(argc, argv, "--output", "");
-  std::string fmt = flag_opt(argc, argv, "--format", "json");
+  const std::string kind = flag_opt(argc, argv, "--kind", "");
+  const std::string out = flag_opt(argc, argv, "--output", "");
+  const std::string fmt = flag_opt(argc, argv, "--format", "json");
 
   // --kind and --output are required flags
   if (kind.empty() || out.empty()) {
@@ -62,27 +63,38 @@ int main(int argc, char** argv) {
   size_t sB = sizeof(float) * (size_t)K * N;
   size_t sC = sizeof(float) * (size_t)M * N;
 
+  // Closure to free GPU resources
+  auto release_device = [&](){
+    if (dA) cudaFree(dA), dA = nullptr;
+    if (dB) cudaFree(dB), dB = nullptr;
+    if (dC) cudaFree(dC), dC = nullptr;
+    if (dC_ref) cudaFree(dC_ref), dC_ref = nullptr;
+    if (stream) cudaStreamDestroy(stream), stream = nullptr;
+  };
+
   // Allocate device memory
   CUDA_CHECK(cudaMalloc(&dA, sA));
   CUDA_CHECK(cudaMalloc(&dB, sB));
   CUDA_CHECK(cudaMalloc(&dC, sC));
   CUDA_CHECK(cudaMalloc(&dC_ref, sC));
   // Copy filled matrices for A & B to device
-  CUDA_CHECK(cudaMemcpy(dA, hA.data(), sA, cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(dB, hB.data(), sB, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpyAsync(dA, hA.data(), sA, cudaMemcpyHostToDevice, stream));
+  CUDA_CHECK(cudaMemcpyAsync(dB, hB.data(), sB, cudaMemcpyHostToDevice, stream));
   // Set output C matrix values to 0
-  CUDA_CHECK(cudaMemset(dC, 0, sC));
-  CUDA_CHECK(cudaMemset(dC_ref, 0, sC));
+  CUDA_CHECK(cudaMemsetAsync(dC, 0, sC, stream));
+  CUDA_CHECK(cudaMemsetAsync(dC_ref, 0, sC, stream));
+  CUDA_CHECK(cudaStreamSynchronize(stream));
 
   // cuBLAS reference: C_ref = A * B (row-major via dispatcher’s CuBLAS path).
   launch_kernel(KernelKind::CuBLAS, dA, dB, dC_ref, M, N, K, stream);
   CUDA_CHECK(cudaStreamSynchronize(stream));
   CUDA_CHECK(cudaMemcpy(hC_ref.data(), dC_ref, sC, cudaMemcpyDeviceToHost));
+  // Reset dC after CuBLAS run
+  CUDA_CHECK(cudaMemset(dC, 0, sC));
 
   // Resolve kernel kind
   KernelKind k = parse_kernel(kind.c_str());
   
-  CUDA_CHECK(cudaMemset(dC, 0, sC));
   // Run the kernel 'iters' times and time with CUDA events
   float ms = time_cuda_events(iters, stream, [&]{
     launch_kernel(k, dA, dB, dC, M, N, K, stream);
@@ -90,7 +102,8 @@ int main(int argc, char** argv) {
   
   // Copy kernel output C back to host for comparison with cuBLAS reference.
   CUDA_CHECK(cudaStreamSynchronize(stream));
-  CUDA_CHECK(cudaMemcpy(hC.data(), dC, sC, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpyAsync(hC.data(), dC, sC, cudaMemcpyDeviceToHost, stream));
+  CUDA_CHECK(cudaStreamSynchronize(stream));
 
   // Compare the kernel output with the reference value
   double max_abs_err = 0.0, rel_err = 0.0;
@@ -104,15 +117,6 @@ int main(int argc, char** argv) {
   std::string record = (fmt == "json")
     ? make_json_record(kname, M, N, K, iters, ms, gflops, max_abs_err, rel_err)
     : make_csv_record (kname, M, N, K, iters, ms, gflops, max_abs_err, rel_err);
-
-  // Closure to free GPU resources
-  auto release_device = [&](){
-    if (dA) cudaFree(dA), dA = nullptr;
-    if (dB) cudaFree(dB), dB = nullptr;
-    if (dC) cudaFree(dC), dC = nullptr;
-    if (dC_ref) cudaFree(dC_ref), dC_ref = nullptr;
-    if (stream) cudaStreamDestroy(stream), stream = nullptr;
-  };
 
   // Append the benchmark record to the output file
   if (!append_file_line(out, record)) {

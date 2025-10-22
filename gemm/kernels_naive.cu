@@ -52,7 +52,7 @@ __global__ void matmul_naive2d(const float* A, const float* B, float* C, int M, 
 }
 
 void launch_naive2d(const float* A, const float* B,float* C, int M, int N, int K, cudaStream_t s){
-  dim3 block(16,16); // 256 blocks
+  dim3 block(16,16); // 256 threads
   dim3 grid((N + 15)/16, (M + 15)/16);
   
   matmul_naive2d<<<grid, block, 0, s>>>(A,B,C,M,N,K);
