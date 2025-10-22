@@ -1,6 +1,6 @@
 BUILD_DIR ?= build
 CONFIG    ?= Release
-ARCHS     ?= 89;90
+ARCHS     ?= 86;90 # Ampere & Ada
 TARGET    ?= gemm_bench
 VENV      ?= .venv
 PIP       := $(VENV)/bin/pip

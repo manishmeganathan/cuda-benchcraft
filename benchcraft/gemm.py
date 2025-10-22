@@ -2,6 +2,7 @@
 
 from . import system
 from . import prompt
+from . import analysis
 
 from pathlib import Path
 from typing import List, Dict, Tuple, Any
@@ -54,6 +55,22 @@ def prompt_parameters() -> Tuple[Dict[str, Any], List[str]]:
 
     return params, kernels
 
+def generate_args(
+    kernel: str, iters: int,
+    M: int, N: int, K: int, 
+    seedA: int, seedB: int, 
+    output: Path
+) -> List:
+    return [
+        str(BIN_PATH),
+        "--kind", kernel,
+        "--iters", str(iters),
+        "--M", str(M), "--N", str(N), "--K", str(K),
+        "--seedA", str(seedA), "--seedB", str(seedB),
+        "--format", "json",
+        "--output", str(output),
+    ]
+
 def run_kernel(
     kernel: str, iters: int,
     M: int, N: int, K: int, 
@@ -64,18 +81,10 @@ def run_kernel(
     benchmarks = output_dir / "benchmarks.jsonl"
 
     # Run the kernel on the benchmark engine
-    code, out, err = system.run_cmd([
-        str(BIN_PATH),
-        "--kind", kernel,
-        "--iters", str(iters),
-        "--M", str(M), "--N", str(N), "--K", str(K),
-        "--seedA", str(seedA), "--seedB", str(seedB),
-        "--format", "json",
-        "--output", str(benchmarks),
-    ])
+    code, out, err = system.run_cmd(generate_args(kernel, iters, M, N, K, seedA, seedB, benchmarks))
     if code != 0:
-        raise RuntimeError(f"gemm_bench failed (code={code}) for kernel '{kernel}':\n{err.strip() or out.strip()}")
-
+        raise RuntimeError(f"kernel '{kernel}' benchmark failed:\n{err.strip() or out.strip()}")
+    
 def run_kernel_profile(
     kernel: str, iters: int,
     M: int, N: int, K: int, 
@@ -87,50 +96,9 @@ def run_kernel_profile(
     Return a list of artifacts generated from the profiling
     """
     benchmarks = output_dir / "benchmarks.jsonl"
-    nsys_stats = output_dir / f"nsys-stats-{kernel}"
-    nsys_base  = output_dir / f"nsys-{kernel}"
-    nsys_rep   = Path(str(nsys_base) + ".nsys-rep")
-    
-    # Run the kernel on the benchmark engine
-    # through the nsys CLI and record timeline
-    code, out, err = system.run_cmd([
-        "nsys", "profile",
-        "-o", str(nsys_base),
-        "--trace=cuda,cublas,osrt",
-        "--sample=cpu",
-        "--force-overwrite=true",
-        str(BIN_PATH),
-        "--kind", kernel,
-        "--iters", str(iters),
-        "--M", str(M), "--N", str(N), "--K", str(K),
-        "--seedA", str(seedA), "--seedB", str(seedB),
-        "--format", "json", 
-        "--output", str(benchmarks),
-    ])
-    if code != 0:
-        raise RuntimeError(f"nsys(bench_gemm) failed (code={code}) for kernel '{kernel}':\n{err.strip() or out.strip()}")
+    base_path = output_dir / f"nsys-{kernel}"
 
-    reports = [
-        "cuda_api_gpu_sum",
-        "cuda_gpu_kern_gb_sum"
-    ]
-
-    # Generate stats from the timeline
-    code, out, err = system.run_cmd([
-        "nsys", "stats",
-        "--report", ','.join(reports),
-        "--format", "json",
-        "--force-overwrite=true",
-        "--force-export=true",
-        "-o", str(nsys_stats),
-        str(nsys_rep)
-    ])
-    if code != 0:
-        raise RuntimeError(f"nsys stats failed (code={code}): {out.strip() or err.strip()}")
-
-    # Generate profile artifacts
-    artifacts = [f"{nsys_stats.name}_{report}" for report in reports]
-    artifacts.append(Path(str(nsys_base) + ".sqlite").name)
-    artifacts.append(nsys_rep.name)
-
-    return artifacts
+    try:
+        return analysis.profile_stats(base_path, generate_args(kernel, iters, M, N, K, seedA, seedB, benchmarks))
+    except Exception as e:
+        raise RuntimeError(f"kernel '{kernel}' benchmark (profiled) failed: {e}")

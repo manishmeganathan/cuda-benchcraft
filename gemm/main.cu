@@ -6,14 +6,14 @@
 #include "records.hpp"
 
 static void print_help() {
-  std::printf("gemm_bench (engine)\n");
-  std::printf("  --M <int> --N <int> --K <int>\n");
+  std::printf("bench_gemm\n");
+  std::printf("  --list | --help\n");
   std::printf("  --iters <int>\n");
-  std::printf("  --kind <KernelName>\n");
+  std::printf("  --kind <KernelName> (required) \n");
+  std::printf("  --M <int> --N <int> --K <int>\n");
   std::printf("  --seedA <uint> --seedB <uint>\n");
   std::printf("  --format <csv|json>\n");
-  std::printf("  --output <path>    (required; appends one record)\n");
-  std::printf("  --list | --help\n");
+  std::printf("  --output <path>    (required; appends record)\n");
 }
 
 int main(int argc, char** argv) {
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
   // Parse kernel kind, result formatting and output path
   std::string kind = flag_opt(argc, argv, "--kind", "");
   std::string out = flag_opt(argc, argv, "--output", "");
-  std::string fmt = flag_opt(argc, argv, "--format", "csv");
+  std::string fmt = flag_opt(argc, argv, "--format", "json");
 
   // --kind and --output are required flags
   if (kind.empty() || out.empty()) {
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   double max_abs_err = 0.0, rel_err = 0.0;
   cmp_vectors(hC, hC_ref, max_abs_err, rel_err);
 
-  // GEMM FLOP count: 2 * M * N * K (mul + add per inner product).
+  // GEMM FLOP count: 2 * M * N * K
   double gflops = (2.0 * (double)M * (double)N * (double)K) / (ms / 1e3) / 1e9;
 
   // Serialize one record and append to --output

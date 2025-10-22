@@ -27,6 +27,7 @@ inline float time_cuda_events(int iters, cudaStream_t stream, F&& body) {
     CUDA_CHECK(cudaEventCreate(&e));
 
     body(); // warmup once
+    CUDA_CHECK(cudaPeekAtLastError()); // check the launch right away (helps catch bad builds)
 
     // Execute the function N time and record each iteration
     CUDA_CHECK(cudaEventRecord(s, stream));
