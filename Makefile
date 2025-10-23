@@ -1,10 +1,10 @@
 BUILD_DIR ?= build
 CONFIG    ?= Release
 ARCHS     ?= 86;90 # Ampere & Ada
-TARGET    ?= gemm_bench
 VENV      ?= .venv
 PIP       := $(VENV)/bin/pip
 PYTHON    := $(VENV)/bin/python
+LIBTORCH = /workspace/libtorch
 
 .PHONY: build rebuild clean clean-build clean-results clean-venv venv deps craft
 
@@ -12,7 +12,8 @@ PYTHON    := $(VENV)/bin/python
 $(BUILD_DIR)/CMakeCache.txt:
 	cmake -B $(BUILD_DIR) -S . \
 	  -DCMAKE_BUILD_TYPE=$(CONFIG) \
-	  -DCMAKE_CUDA_ARCHITECTURES="$(ARCHS)"
+	  -DCMAKE_CUDA_ARCHITECTURES="$(ARCHS)" \
+	  -DCMAKE_PREFIX_PATH="$(LIBTORCH)"
 
 build: $(BUILD_DIR)/CMakeCache.txt deps
 	cmake --build $(BUILD_DIR) -j

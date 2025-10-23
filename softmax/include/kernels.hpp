@@ -8,14 +8,16 @@
 enum class KernelKind : int {
     NaiveElem,
     NaiveRow,
+    Torch,
     Count
 };
 
-// Returns canonical name for a kernel kind.
+// Returns canonical name for a kernel kind
 inline static const char* kernel_name(KernelKind k) {
     switch (k) {
         case KernelKind::NaiveElem: return "NaiveElem";
         case KernelKind::NaiveRow: return "NaiveRow";
+        case KernelKind::Torch: return "Torch";
         default: return "Unknown";
     }
 }
@@ -26,6 +28,7 @@ inline static KernelKind parse_kernel(const char* s) {
 
     if (name == "NaiveElem") return KernelKind::NaiveElem;
     if (name == "NaiveRow") return KernelKind::NaiveRow;
+    if (name == "Torch") return KernelKind::Torch;
 
     return KernelKind::NaiveElem;
 }
@@ -40,6 +43,7 @@ inline static void list_kernels() {
 // Forward declarations for variant-specific launchers
 void launch_naive_element(const float*, float*, int, int, cudaStream_t);
 void launch_naive_row(const float*, float*, int, int, cudaStream_t);
+void launch_torch(const float*, float*, int, int, cudaStream_t);
 
 // Unified Softmax Kernel Launcher
 inline static void launch_kernel(
@@ -52,7 +56,8 @@ inline static void launch_kernel(
   switch (kind) {
     case KernelKind::NaiveElem: launch_naive_element(X,Y,M,N,stream); break;
     case KernelKind::NaiveRow: launch_naive_row(X,Y,M,N,stream); break;
-    
+    case KernelKind::Torch: launch_torch(X,Y,M,N,stream); break;
+
     default: 
       std::fprintf(stderr, "Kernel '%s' not implemented yet.\n", kernel_name(kind));
       return;

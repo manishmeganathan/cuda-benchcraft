@@ -37,9 +37,13 @@ target_link_libraries(bench_gemm PRIVATE CUDA::cudart CUDA::cublas)
 
 # -- Softmax Bench --------
 
+# pass -DCMAKE_PREFIX_PATH=/path/to/libtorch
+find_package(Torch REQUIRED) 
+
 add_executable(bench_softmax
   softmax/main.cu
   softmax/kernels_naive.cu
+  softmax/kernels_torch.cpp
 )
 
 target_include_directories(bench_softmax PUBLIC common)
@@ -54,4 +58,5 @@ target_compile_options(bench_softmax PRIVATE
   >
 )
 
-target_link_libraries(bench_softmax PRIVATE CUDA::cudart)
+target_link_libraries(bench_softmax PRIVATE CUDA::cudart ${TORCH_LIBRARIES})
+set_target_properties(bench_softmax PROPERTIES BUILD_RPATH "${CMAKE_PREFIX_PATH}/lib")
