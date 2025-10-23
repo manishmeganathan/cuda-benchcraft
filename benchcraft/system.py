@@ -20,6 +20,24 @@ def run_cmd(args: List[str], check: bool = False, capture: bool = True, text: bo
     except FileNotFoundError as e:
         return 127, "", f"{e}"
 
+def bin_exists(bin: Path) -> bool:
+    if not bin.exists():
+        print(f"error: binary not found at {bin}. build first with `make build`")
+        return False
+    
+    if not bin.is_file():
+        print(f"error: path is not a file: {bin}")
+        return False
+
+    return True
+
+def bin_list(bin: Path) -> List[str]:
+    code, out, err = run_cmd([str(bin), "--list"])
+    if code != 0:
+        raise RuntimeError(f"failed to list kernels (code={code}):\n{err.strip()}")
+    
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
 def discovery_cuda() -> Dict[str, Any]:
     """ Discovers and returns CUDA build information """
     cuda: Dict[str, Any] = {"archs": ""}

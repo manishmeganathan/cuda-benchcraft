@@ -102,6 +102,24 @@ def main() -> int:
                 # Set the run func from the gemm module
                 kernel_run_func = gemm.run_kernel
 
+            case "Softmax":
+                from benchcraft import softmax
+
+                # Check if binary exists
+                if not softmax.bin_exists(): raise FileNotFoundError("Softmax benchmarking binary is not available")
+                # Add build information to session config
+                session_config["build"] = system.discovery_build(softmax.BIN_PATH)
+
+                # Prompt for softmax benchmark parameters and kernel selection
+                softmax_params, softmax_kernels = softmax.prompt_parameters()
+                
+                # Use the user provided kernel selection
+                kernel_run_list = softmax_kernels
+                # Unpack the softmax args into the run args
+                kernel_run_args = kernel_run_args | softmax_params
+                # Set the run func from the softmax module
+                kernel_run_func = softmax.run_kernel
+
             case _:
                 raise ValueError(f"unsupported workload: {workload}")
 

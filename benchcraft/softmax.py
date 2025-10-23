@@ -7,35 +7,33 @@ from . import analysis
 from pathlib import Path
 from typing import List, Dict, Tuple, Any
 
-BIN_PATH = Path("build/bench_gemm") 
+BIN_PATH = Path("build/bench_softmax") 
 
 def bin_exists() -> bool:
-    """ Confirms whether the GEMM benchmarking engine is available """
+    """ Confirms whether the Softmax benchmarking engine is available """
     return system.bin_exists(BIN_PATH)
 
 def list_kernels() -> List[str]:
-    """ Return the list of available kernels for GEMM benchmarking """
+    """ Return the list of available kernels for Softmax benchmarking """
     return system.bin_list(BIN_PATH)
 
 def prompt_parameters() -> Tuple[Dict[str, Any], List[str]]:
-    """ Prompt user for GEMM benchmarking parameters and kernel choices """
+    """ Prompt user for Softmax benchmarking parameters and kernel choices """
     try:
         kernel_list = list_kernels()
     except Exception as e:
         raise e
 
     if not kernel_list:
-        raise RuntimeError("no kernels reported by bench_gemm")
+        raise RuntimeError("no kernels reported by bench_softmax")
 
     # Prompt gemm matrix parameters
-    print("\n-- GEMM Benchmark Configuration --")
+    print("\n-- Softmax Benchmark Configuration --")
     params = {}
     params["M"] = prompt.prompt_int("M", 1024)
     params["N"] = prompt.prompt_int("N", 1024)
-    params["K"] = prompt.prompt_int("K", 1024)
     print() # newline
-    params["seedA"] = prompt.prompt_uint("Seed A", 1234)
-    params["seedB"] = prompt.prompt_uint("Seed B", 5678)
+    params["seedX"] = prompt.prompt_uint("Seed X", 1357)
 
     # Prompt kernel selection
     kernels = prompt.prompt_kernels(kernel_list)
@@ -45,36 +43,34 @@ def prompt_parameters() -> Tuple[Dict[str, Any], List[str]]:
 
 def generate_args(
     kernel: str, iters: int,
-    M: int, N: int, K: int, 
-    seedA: int, seedB: int, 
+    M: int, N: int, seedX: int, 
     output: Path
 ) -> List:
     return [
         str(BIN_PATH),
         "--kind", kernel,
         "--iters", str(iters),
-        "--M", str(M), "--N", str(N), "--K", str(K),
-        "--seedA", str(seedA), "--seedB", str(seedB),
+        "--M", str(M), "--N", str(N),
+        "--seedX", str(seedX),
         "--format", "json",
         "--output", str(output),
     ]
 
 def run_kernel(
     kernel: str, iterations: int,
-    M: int, N: int, K: int, 
-    seedA: int, seedB: int, 
+    M: int, N: int, seedX: int, 
     session_dir: Path,
     profile: bool,
 ) -> List[str]:
     """ 
-    Run bench_gemm for the given kernel.
+    Run bench_softmax for the given kernel.
     Benchmark records are stored to {session_dir}/benchmarks.jsonl
 
     If profile = True, runs the benchmark through the nsys CLI and capture profiler stats.
     Return profiler artifacts as a list if this was done, otherwise returns an empty list.
     """
     benchmarks = session_dir / "benchmarks.jsonl"
-    arguments = generate_args(kernel, iterations, M, N, K, seedA, seedB, benchmarks)
+    arguments = generate_args(kernel, iterations, M, N, seedX, benchmarks)
 
     # Check if profiler is enabled
     if profile:
