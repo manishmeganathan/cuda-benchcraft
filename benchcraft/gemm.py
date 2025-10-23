@@ -72,33 +72,35 @@ def generate_args(
     ]
 
 def run_kernel(
-    kernel: str, iters: int,
+    kernel: str, iterations: int,
     M: int, N: int, K: int, 
     seedA: int, seedB: int, 
-    output_dir: Path,
-):
-    """ Run bench_gemm for the given kernel """
-    benchmarks = output_dir / "benchmarks.jsonl"
-
-    # Run the kernel on the benchmark engine
-    code, out, err = system.run_cmd(generate_args(kernel, iters, M, N, K, seedA, seedB, benchmarks))
-    if code != 0:
-        raise RuntimeError(f"kernel '{kernel}' benchmark failed:\n{err.strip() or out.strip()}")
-    
-def run_kernel_profile(
-    kernel: str, iters: int,
-    M: int, N: int, K: int, 
-    seedA: int, seedB: int, 
-    output_dir: Path,
+    session_dir: Path,
+    profile: bool,
 ) -> List[str]:
-    """
-    Run the bench_gemm for the given kernel through the nsys CLI. 
-    Return a list of artifacts generated from the profiling
-    """
-    benchmarks = output_dir / "benchmarks.jsonl"
-    base_path = output_dir / f"nsys-{kernel}"
+    """ 
+    Run bench_gemm for the given kernel.
+    Benchmark records are stored to {session_dir}/benchmarks.jsonl
 
-    try:
-        return analysis.profile_stats(base_path, generate_args(kernel, iters, M, N, K, seedA, seedB, benchmarks))
-    except Exception as e:
-        raise RuntimeError(f"kernel '{kernel}' benchmark (profiled) failed: {e}")
+    If profile = True, runs the benchmark through the nsys CLI and capture profiler stats.
+    Return profiler artifacts as a list if this was done, otherwise returns an empty list.
+    """
+    benchmarks = session_dir / "benchmarks.jsonl"
+
+    # Check if profiler is enabled
+    if profile:
+        base_path = session_dir / f"nsys-{kernel}"
+
+        try:
+            # Attempt to run the kernel through the nsys CLI, capture timeline and generate stats
+            return analysis.profile_stats(base_path, generate_args(kernel, iterations, M, N, K, seedA, seedB, benchmarks))
+        except Exception as e:
+            raise RuntimeError(f"kernel '{kernel}' benchmark (profiled) failed: {e}")
+        
+    else:
+        # Run the kernel directly on the benchmark engine
+        code, out, err = system.run_cmd(generate_args(kernel, iterations, M, N, K, seedA, seedB, benchmarks))
+        if code != 0:
+            raise RuntimeError(f"kernel '{kernel}' benchmark failed:\n{err.strip() or out.strip()}")
+
+        return []
