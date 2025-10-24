@@ -1,4 +1,4 @@
-// gemm/kernels_naive.cu
+// softmax/kernels_naive.cu
 // Naive softmax kernels
 
 #include "kernels.hpp"
@@ -7,7 +7,7 @@
 // Kernel function to compute the softmax activation for a matrix [M * N]
 // Each threads computes 1 element of the output matrix but independently 
 // computes the max and sum for the softmax function for each element
-__global__ void softmax_naive_element(const float* X, float* Y, int M, int N) {
+__global__ void softmax_naive(const float* X, float* Y, int M, int N) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -37,17 +37,22 @@ __global__ void softmax_naive_element(const float* X, float* Y, int M, int N) {
     Y[idx] = expf(X[idx] - maxval) / sumval;
 }
 
-void launch_naive_element(const float* X, float* Y, int M, int N, cudaStream_t s){
+void launch_naive(const float* X, float* Y, int M, int N, cudaStream_t s){
   dim3 block(16,16); // 256 threads
   dim3 grid((M + 15)/16, (N + 15)/16);
 
-  softmax_naive_element<<<grid, block, 0, s>>>(X,Y,M,N);
+  softmax_naive<<<grid, block, 0, s>>>(X,Y,M,N);
 }
 
+// NaiveRow 
+//
 // Kernel function to compute the softmax activation for a matrix [M * N]
-// Each thread computes all elements in a row of output matrix. This reduces
-// the number of wasted computation when finding the sum and max but decreases
-// parallelism and increases the work done by an individual thread
+// Each thread computes all elements in a row of output matrix. 
+//
+// Optimizations (Vs Naive):
+// - Reduces overhead of computing the sum and max for each element and instead
+//   shares the computed values for all elements in the row
+// - Improves performance but at the cost of reduced row-level parallelism for wide matrices
 __global__ void softmax_naive_row(const float* X, float* Y, int M, int N) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
 

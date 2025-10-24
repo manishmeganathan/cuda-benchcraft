@@ -27,7 +27,6 @@ target_include_directories(bench_gemm PRIVATE ${CMAKE_SOURCE_DIR})
 
 target_compile_options(bench_gemm PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:
-    --use_fast_math
     -lineinfo
     -Xptxas=-v
   >
@@ -43,6 +42,7 @@ find_package(Torch REQUIRED)
 add_executable(bench_softmax
   softmax/main.cu
   softmax/kernels_naive.cu
+  softmax/kernels_reduce.cu
   softmax/kernels_torch.cpp
 )
 
@@ -52,7 +52,6 @@ target_include_directories(bench_softmax PRIVATE ${CMAKE_SOURCE_DIR})
 
 target_compile_options(bench_softmax PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:
-    --use_fast_math
     -lineinfo
     -Xptxas=-v
   >
