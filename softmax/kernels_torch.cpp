@@ -8,15 +8,21 @@
 #include <ATen/cuda/CUDAContext.h> 
 
 static inline torch::TensorOptions device_f32() {
-  return torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+    return torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
 }
 
+static thread_local cudaEvent_t kFenceEvent = []() {
+  cudaEvent_t e{};
+  cudaEventCreateWithFlags(&e, cudaEventDisableTiming);
+  return e;
+}();
+
 void launch_torch(const float* X, float* Y, int M, int N, cudaStream_t s) {
+    // Confirm that CUDA execution for libtorch is available and disable autograd
     assert(torch::cuda::is_available());
+    torch::InferenceMode no_autograd;
 
-    // No autograd overhead in benchmarking
-    torch::InferenceMode guard;
-
+    // Wrap device buffers as torch tensors
     torch::Tensor tensorX = torch::from_blob(const_cast<float*>(X), {M, N}, device_f32());  
     torch::Tensor tensorY = torch::from_blob(Y, {M, N}, device_f32());  
     
@@ -24,11 +30,10 @@ void launch_torch(const float* X, float* Y, int M, int N, cudaStream_t s) {
     torch::Tensor out = torch::softmax(tensorX, 1);
     tensorY.copy_(out, /*non_blocking=*/true);
 
-    // Fence torch stream so our timer stream s measures correctly
-    auto torch_stream = at::cuda::getCurrentCUDAStream();
-    cudaEvent_t done{};
-    cudaEventCreateWithFlags(&done, cudaEventDisableTiming);
-    cudaEventRecord(done, torch_stream.stream());
-    cudaStreamWaitEvent(s, done, 0);
-    cudaEventDestroy(done);
+    // Get the torch stream so we can fence around it
+    cudaStream_t torch_stream = at::cuda::getCurrentCUDAStream();
+    // Wait for the torch stream to complete so our 
+    // timer stream s can time our GPU work correctly
+    cudaEventRecord(kFenceEvent, torch_stream);
+    cudaStreamWaitEvent(s, kFenceEvent, 0);
 }
