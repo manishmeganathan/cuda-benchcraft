@@ -100,10 +100,16 @@ int main(int argc, char** argv) {
     // Resolve kernel kind
     KernelKind k = parse_kernel(kind.c_str());
 
-    // Run the kernel 'iters' times and time with CUDA events
-    float ms = time_cuda_events(iters, stream, [&]{
-        launch_kernel(k, dX, dY, M, N, stream);
-    });
+    float ms = 0.f;
+    if (k == KernelKind::Torch) {
+        // Run the Torch kernel 'iters' times and time the torch stream
+        ms = launch_torch(iters, dX, dY, M, N);
+    } else {
+        // Run the kernel 'iters' times and time with CUDA events
+        ms = time_cuda_events(iters, stream, [&]{
+            launch_kernel(k, dX, dY, M, N, stream);
+        });
+    }
 
     // Copy kernel output C back to host for comparison with CPU reference.
     CUDA_CHECK(cudaStreamSynchronize(stream));

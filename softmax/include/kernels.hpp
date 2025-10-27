@@ -42,14 +42,22 @@ inline static void list_kernels() {
     std::printf("%s\n", kernel_name(static_cast<KernelKind>(i)));
 }
 
-
 // Forward declarations for variant-specific launchers
 void launch_naive(const float*, float*, int, int, cudaStream_t);
 void launch_naive_row(const float*, float*, int, int, cudaStream_t);
 void launch_reduce(const float*, float*, int, int, cudaStream_t);
-void launch_torch(const float*, float*, int, int, cudaStream_t);
+
+// Softmax Torch Kernel Launcher
+// Return the average execution time in millisecods
+float launch_torch(
+  int iters,
+  const float* X,     // input matrix X [M * N]
+  float* Y,           // output matrix Y [M * N]
+  int M, int N        // matrix size params
+);
 
 // Unified Softmax Kernel Launcher
+// Can be used for all kernels except Torch
 inline static void launch_kernel(
     KernelKind kind,    // kind of softmax kernel
     const float* X,     // input matrix X [M * N]
@@ -61,7 +69,10 @@ inline static void launch_kernel(
     case KernelKind::Naive: launch_naive(X,Y,M,N,stream); break;
     case KernelKind::NaiveRow: launch_naive_row(X,Y,M,N,stream); break;
     case KernelKind::Reduce: launch_reduce(X,Y,M,N,stream); break;
-    case KernelKind::Torch: launch_torch(X,Y,M,N,stream); break;
+
+    case KernelKind::Torch: 
+      std::fprintf(stderr, "Kernel 'Torch' cannot be called from unified launcher.\n");
+      return;
 
     default: 
       std::fprintf(stderr, "Kernel '%s' not implemented yet.\n", kernel_name(kind));
