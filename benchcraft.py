@@ -16,17 +16,33 @@ import shutil
 
 from benchcraft import prompt, system, analysis
 
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Any
 from datetime import datetime, timezone
 
 ISO_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
-WORKLOADS = [
-    "GEMM",
-    "Softmax",
-]
+class Workloads(Enum):
+    SingleGEMM = {"kind": "GEMM", "sizing": "single"}
+    MultiGEMM = {"kind": "GEMM", "sizing": "multi"}
+    SingleSoftmax = {"kind": "Softmax", "sizing": "single"}
+    MultiSoftmax = {"kind": "Softmax", "sizing": "multi"}
 
+    def __str__(self):
+        kind = self.value["kind"]
+        size = "Multi" if self.value["sizing"] == "multi" else "Single"
+        return f"{kind} ({size}-Size)"
+
+    @classmethod
+    def list(cls):
+        return list(map(lambda c: str(c), cls)) 
+
+    def multisize(self) -> bool:
+        return self.value["sizing"] == "multi"
+
+    def kind(self) -> str:
+        return self.value["kind"]
 
 def main() -> int:
     print("== Benchcraft ==")
@@ -55,24 +71,29 @@ def main() -> int:
         return 1
 
     try:
+        # Prompt for benchmarking workload
+        menu = "Available Workloads: \n"
+        for index, workload in enumerate(list(Workloads)):
+            menu += f"[{index}] {workload}\n"
+
+        index = prompt.prompt_uint(f"\n{menu}\Select Workload Index:", 0)
+        if index >= len(Workloads):
+            raise ValueError("selection must be a valid index")
+
+        workload = list(Workloads)[index]
+
         # Prompt benchmarking iterations
-        session_config["benchmark"]["iterations"] = prompt.prompt_int("\nBenchmarking Iterations", 10)
+        session_config["benchmark"]["iterations"] = prompt.prompt_int("Benchmarking Iterations", 10)
 
         # Prompt plotting enable
         session_config["benchmark"]["plot"] = prompt.prompt_yes_no("Enable Plotting?", default=False)
 
-        # Prompt profiling enable (if nsys is available)
-        if shutil.which("nsys") is not None:
+        # Prompt profiling enable if
+        # - nsys is available AND
+        # - workload is not multi-size
+        session_config["benchmark"]["profile"] = False
+        if (shutil.which("nsys") is not None) and not workload.multisize():
             session_config["benchmark"]["profile"] = prompt.prompt_yes_no("Enable Profiling?", default=False)
-
-        # Prompt for benchmarking workload
-        menu = "Available Workloads: \n"
-        for index, workload in enumerate(WORKLOADS):
-            menu += f"[{index}] {workload}  "
-
-        index = prompt.prompt_int(f"\n{menu}\nEnter Workload Index:", 0)
-        if index >= len(WORKLOADS):
-            raise ValueError("selection must be a valid index")
 
         # Collect arguments for kernel run
         kernel_run_args: Dict[str, Any] = {}
@@ -83,8 +104,8 @@ def main() -> int:
         kernel_run_list = []
         kernel_run_func = None
 
-        match workload := WORKLOADS[index]:
-            case "GEMM":
+        match workload:
+            case Workloads.SingleGEMM:
                 from benchcraft import gemm
 
                 # Check if binary exists
@@ -99,10 +120,12 @@ def main() -> int:
                 kernel_run_list = gemm_kernels
                 # Unpack the gemm args into the run args
                 kernel_run_args = kernel_run_args | gemm_params
+
+
                 # Set the run func from the gemm module
                 kernel_run_func = gemm.run_kernel
 
-            case "Softmax":
+            case Workloads.SingleSoftmax | Workloads.MultiSoftmax:
                 from benchcraft import softmax
 
                 # Check if binary exists
@@ -111,17 +134,19 @@ def main() -> int:
                 session_config["build"] = system.discovery_build(softmax.BIN_PATH)
 
                 # Prompt for softmax benchmark parameters and kernel selection
-                softmax_params, softmax_kernels = softmax.prompt_parameters()
+                softmax_kernels, softmax_params, softmax_sizes = softmax.prompt_parameters(workload.multisize())
                 
                 # Use the user provided kernel selection
                 kernel_run_list = softmax_kernels
-                # Unpack the softmax args into the run args
+                # Unpack the softmax args and sizes into the run args
                 kernel_run_args = kernel_run_args | softmax_params
+                kernel_run_args["sizes"] = softmax_sizes
+
                 # Set the run func from the softmax module
-                kernel_run_func = softmax.run_kernel
+                kernel_run_func = softmax.run_kernel_multisize if workload.multisize else softmax.run_kernel
 
             case _:
-                raise ValueError(f"unsupported workload: {workload}")
+                raise ValueError(f"unsupported workload: {str(workload)}")
 
         # Abort if kernel runner was not set
         if kernel_run_func is None:
@@ -143,11 +168,16 @@ def main() -> int:
         if session_config["benchmark"]["plot"]:
             print(f">> Generating Plots ...")
 
-            # Plot GFLOP/s Throughput for all kernels
-            if analysis.plot_throughput(session_dir):
-                session_config["artifacts"]["plots"].append("throughput.png")
+
+            if workload.multisize():
+                print(">> WARNING: plots not available for multisize workloads yet")
+
             else:
-                print(">> WARNING: failed to generate throughput plot")
+                # Plot GFLOP/s Throughput for all kernels
+                if analysis.plot_throughput(session_dir):
+                    session_config["artifacts"]["plots"].append("throughput.png")
+                else:
+                    print(">> WARNING: failed to generate throughput plot")
 
         finish_time = datetime.now()
 

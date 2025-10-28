@@ -40,23 +40,35 @@ def prompt_kernels(available: List[str]) -> List[str]:
     """ 
     Prompt loop to collect a list of kernels to benchmark.
     Expects user to input the index for the kernel. 
-    Selection must contain aleast one option
+    - Selection must contain aleast one option.
+    - Index 0 selects all available kernels
     """
-    menu = "Available Kernels: \n"
-    for index, kernel in enumerate(available):
+    selected: List[str] = []
+
+    menu = "Available Kernels: \n[0] ALL "
+    for index, kernel in enumerate(available, start=1):
         menu += f"[{index}] {kernel}  "
 
-    selected: List[str] = []
-    while True:
+    while True:        
+        if len(selected) == len(available):
+            print("  all kernels selected")
+            break
+
         index = input(f"\n{menu}\nEnter Kernel Index (blank to finish): ").strip()
         if not index: 
             if selected: break
             else:
                 print("  no kernels selected")
                 continue
+
+        # Handle ALL via 0 or common aliases
+        if index == "0":
+            selected = available[:] 
+            print("  all kernels selected")
+            break
         
         try:
-            kernel = available[int(index)]
+            kernel = available[int(index) - 1]
         except (ValueError, IndexError):
             print("  selection must be a valid index")
             continue
