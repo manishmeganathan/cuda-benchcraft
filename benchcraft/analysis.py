@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
+import math
 import json
 import matplotlib.pyplot as pyplot 
 
 from . import system
 
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Tuple, Dict, Any
 
 def get_benchmarks_records(session_dir: Path) -> List[Dict[str, Any]]:
     """ 
@@ -34,36 +35,126 @@ def get_benchmarks_records(session_dir: Path) -> List[Dict[str, Any]]:
 
     return records
 
-def plot_throughput(session_dir: Path) -> bool:
+def plot_throughput(session_dir: Path, multisize: bool = False) -> bool:
     """
-    Create a single comparison bar chart of GFLOP/s for all kernels.
-    Data is obtained from the benchmarks.jsonl file in the session directory.
-    The plot is saved to the session directory as "throughtput.png"
+    Create a throughput plot from benchmarks.jsonl records in `session_dir`.
+
+    Behavior:
+      - Parse all records and bucket by (M,N) size and kernel name.
+      - If >1 size bucket exists but `multisize` is False -> print error and return False.
+      - If `multisize` is True -> line plot: X = elements (M*N), Y = GFLOP/s, one line per kernel.
+        For each (kernel, size) pair, the latest record (last occurrence) is used.
+      - If only one size bucket exists -> bar chart with latest record per kernel.
+
+    Saves: session_dir / "throughput.png"
+    Returns: True on success, False otherwise.
     """
     # Obtain all benchmark records
-    records = get_benchmarks_records(session_dir)
+    records: List[Dict[str, Any]] = get_benchmarks_records(session_dir)
 
     if not records:
         print("(!!) No records found for plotting.")
         return False
 
-    kernel = []
-    gflops = []
+    # --- Build buckets ---
+    # size_buckets: Dict[(M,N), Dict[kernel_name, record]]
+    size_buckets: Dict[Tuple[int, int], Dict[str, Dict[str, Any]]] = {}
+    for rec in records:
+        try:
+            M = int(rec.get("M"))
+            N = int(rec.get("N"))
+            name = str(rec.get("name"))
+            gflops = float(rec.get("gflops"))
+        except (TypeError, ValueError):
+            # Skip malformed entries
+            continue
+        if not name:
+            continue
+        key = (M, N)
+        # Keep the latest record per (kernel,size) by overwriting as we iterate in order
+        size_buckets.setdefault(key, {})[name] = rec
 
-    for record in records:
-        kernel.append(record.get('name'))
-        gflops.append(record.get('gflops'))
+    if not size_buckets:
+        print("(!!) No valid (M,N) records for plotting.")
+        return False
 
-    # Plot kernel throughput in GFLOP/s
-    throughput = pyplot.figure()    
-    pyplot.bar(kernel, gflops)
+    unique_sizes = list(size_buckets.keys())
+
+    # --- Guard: multisize disabled but multiple sizes present ---
+    if len(unique_sizes) > 1 and not multisize:
+        sizes_str = ", ".join([f"{M}x{N}" for (M, N) in sorted(unique_sizes)])
+        print(f"(!!) Multiple sizes present ({sizes_str}) but multisize=False. Aborting.")
+        return False
+
+    # --- Single-size path: bar chart (latest per kernel) ---
+    if len(unique_sizes) == 1:
+        (M, N) = unique_sizes[0]
+        kernel_to_rec = size_buckets[(M, N)]
+
+        # Collect latest record per kernel
+        kernels = sorted(kernel_to_rec.keys())
+        gflops_vals = [float(kernel_to_rec[k]["gflops"]) for k in kernels]
+
+        fig = pyplot.figure()
+        pyplot.bar(kernels, gflops_vals)
+        pyplot.ylabel("GFLOP/s")
+        pyplot.title(f"Kernel Throughput @ {M}×{N}")
+        pyplot.tight_layout()
+
+        out = session_dir / "throughput.png"
+        fig.savefig(out)
+        pyplot.close(fig)
+        return True
+
+    # --- Multisize path: line plot (X = M*N, Y = GFLOP/s), one line per kernel ---
+    # Build per-kernel series: kernel -> List[(elements, gflops)]
+    kernel_series: Dict[str, List[Tuple[int, float]]] = {}
+    for (M, N), per_kernel in size_buckets.items():
+        elements = M * N
+        for kernel_name, rec in per_kernel.items():
+            try:
+                gflops = float(rec["gflops"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            kernel_series.setdefault(kernel_name, []).append((elements, gflops))
+
+    if not kernel_series:
+        print("(!!) No kernel series to plot.")
+        return False
+
+    # Sort each series by elements so the lines are monotonic in X
+    for k in kernel_series:
+        kernel_series[k].sort(key=lambda t: t[0])
+
+    fig = pyplot.figure()
+    for kernel_name, series in sorted(kernel_series.items()):
+        xs = [e for (e, _) in series]
+        ys = [g for (_, g) in series]
+        pyplot.plot(xs, ys, marker="o", label=kernel_name)
+
+    # Logarithmic X axis (base 2)
+    pyplot.xscale("log", base=2)
+
+    # Compute nice power-of-two tick marks covering the data
+    all_x = [e for series in kernel_series.values() for (e, _) in series]
+    emin, emax = min(all_x), max(all_x)
+
+    lo_pow = max(1, math.floor(math.log2(max(emin, 1))))   # clamp lower pow ≥ 2^1
+    hi_pow = min(30, math.ceil(math.log2(emax)))           # clamp upper pow ≤ 2^30
+    ticks = [2**k for k in range(int(lo_pow), int(hi_pow) + 1)]
+
+    pyplot.xticks(ticks, [f"2^{int(math.log2(t))}" for t in ticks])
+    pyplot.xlim(2**lo_pow, 2**hi_pow)
+
+    pyplot.xlabel("Elements (M×N, log₂ scale)")
     pyplot.ylabel("GFLOP/s")
-    pyplot.title("Kernel Throughput")
+    pyplot.title("Kernel Throughput vs Problem Size")
+    pyplot.legend()
     pyplot.tight_layout()
 
-    throughput.savefig(session_dir / "throughput.png")
-    pyplot.close(throughput)
-
+    out = session_dir / "throughput.png"
+    fig.savefig(out)
+    pyplot.close(fig)
     return True
 
 def profile_stats(base_path: Path, args: List) -> List[str]:

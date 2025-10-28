@@ -76,7 +76,7 @@ def main() -> int:
         for index, workload in enumerate(list(Workloads)):
             menu += f"[{index}] {workload}\n"
 
-        index = prompt.prompt_uint(f"\n{menu}\Select Workload Index:", 0)
+        index = prompt.prompt_uint(f"\n{menu}\nSelect Workload Index:", 0)
         if index >= len(Workloads):
             raise ValueError("selection must be a valid index")
 
@@ -168,16 +168,11 @@ def main() -> int:
         if session_config["benchmark"]["plot"]:
             print(f">> Generating Plots ...")
 
-
-            if workload.multisize():
-                print(">> WARNING: plots not available for multisize workloads yet")
-
+            # Plot GFLOP/s Throughput for all kernels
+            if analysis.plot_throughput(session_dir, workload.multisize()):
+                session_config["artifacts"]["plots"].append("throughput.png")
             else:
-                # Plot GFLOP/s Throughput for all kernels
-                if analysis.plot_throughput(session_dir):
-                    session_config["artifacts"]["plots"].append("throughput.png")
-                else:
-                    print(">> WARNING: failed to generate throughput plot")
+                print(">> WARNING: failed to generate throughput plot")
 
         finish_time = datetime.now()
 
