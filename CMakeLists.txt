@@ -6,11 +6,26 @@ set(CMAKE_CUDA_STANDARD 17)
 
 find_package(CUDAToolkit REQUIRED)
 
+set(CMAKE_CUDA_ARCHITECTURES "86;90")
+set(TORCH_CUDA_ARCH_LIST "8.6;9.0")
+
+if(NOT DEFINED ENV{LIBTORCH_DIR} OR "$ENV{LIBTORCH_DIR}" STREQUAL "")
+  message(FATAL_ERROR
+    "Environment variable LIBTORCH_DIR is not defined.\n"
+    "Please set it to your LibTorch installation path, e.g.:\n"
+    "  export LIBTORCH_DIR=/path/to/libtorch"
+  )
+endif()
+
+message(STATUS "Expecting LibTorch at: ${LIBTORCH_DIR}")
+set(CMAKE_PREFIX_PATH $ENV{LIBTORCH_DIR})
+find_package(Torch REQUIRED) 
+
 find_program(NSYS nsys)
 if(NSYS)
-  message(STATUS "Nsight Systems (nsys) found: ${NSYS}")
+  message(STATUS "NSight Systems (nsys) found: ${NSYS}")
 else()
-  message(STATUS "Nsight Systems (nsys) NOT found; profiling will not be available on benchcraft")
+  message(STATUS "NSight Systems (nsys) NOT found; profiling will not be available on benchcraft")
 endif()
 
 # -- GEMM Bench --------
@@ -36,9 +51,6 @@ target_link_libraries(bench_gemm PRIVATE CUDA::cudart CUDA::cublas)
 
 # -- Softmax Bench --------
 
-# pass -DCMAKE_PREFIX_PATH=/path/to/libtorch
-find_package(Torch REQUIRED) 
-
 add_executable(bench_softmax
   softmax/main.cu
   softmax/kernels_naive.cu
@@ -58,4 +70,3 @@ target_compile_options(bench_softmax PRIVATE
 )
 
 target_link_libraries(bench_softmax PRIVATE CUDA::cudart ${TORCH_LIBRARIES})
-set_target_properties(bench_softmax PROPERTIES BUILD_RPATH "${CMAKE_PREFIX_PATH}/lib")

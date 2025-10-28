@@ -111,7 +111,7 @@ __global__ void softmax_atomic_reduce(const float* X, float* Y, int M, int N) {
 }
 
 // AtomicReduce Kernel Launcher
-void launch_atomic_Reduce(const float* X, float* Y, int M, int N, cudaStream_t s) {
+void launch_atomic_reduce(const float* X, float* Y, int M, int N, cudaStream_t s) {
     const int TPB = 256; // Threads-per-block (2^X)
     
     dim3 block(TPB); 
@@ -119,7 +119,6 @@ void launch_atomic_Reduce(const float* X, float* Y, int M, int N, cudaStream_t s
 
     softmax_atomic_reduce<TPB><<<grid, block, 0, s>>>(X,Y,M,N);
 }
-
 
 // TreeReduce
 //

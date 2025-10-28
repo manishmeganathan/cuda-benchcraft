@@ -1,19 +1,15 @@
 BUILD_DIR ?= build
 CONFIG    ?= Release
-ARCHS     ?= 86;90 # Ampere & Ada
 VENV      ?= .venv
 PIP       := $(VENV)/bin/pip
 PYTHON    := $(VENV)/bin/python
-LIBTORCH = /workspace/libtorch
 
 .PHONY: build rebuild clean clean-build clean-results clean-venv venv deps craft
 
 # CMake configure (runs if build has been cleaned)
 $(BUILD_DIR)/CMakeCache.txt:
 	cmake -B $(BUILD_DIR) -S . \
-	  -DCMAKE_BUILD_TYPE=$(CONFIG) \
-	  -DCMAKE_CUDA_ARCHITECTURES="$(ARCHS)" \
-	  -DCMAKE_PREFIX_PATH="$(LIBTORCH)"
+	  -DCMAKE_BUILD_TYPE=$(CONFIG)
 
 build: $(BUILD_DIR)/CMakeCache.txt deps
 	cmake --build $(BUILD_DIR) -j
